@@ -2834,7 +2834,13 @@ input_ipv6_ports() {
 
   for spec in "${SPECS[@]}"; do
     VAR=${spec%%|*}; NAME=${spec#*|}
-    if [ "$MODE" = custom ]; then
+    if [ -n "${!VAR:-}" ]; then
+      port="${!VAR}"
+      if ! port_available "$port"; then
+        error "$NAME 预设端口无效、重复或已被占用。"
+        return 1
+      fi
+    elif [ "$MODE" = custom ]; then
       while true; do
         reading "$NAME 端口（${MIN_PORT}-${MAX_PORT}）: " "$VAR"
         port="${!VAR}"
@@ -3596,12 +3602,12 @@ purge_service_port_rules_ufw() {
   local RULE_NUM
   local COMMENT_PREFIX='Sing-box Family Bucket UFW PORT'
 
+
   while read -r RULE_NUM; do
     [ -n "$RULE_NUM" ] && ufw --force delete "$RULE_NUM" >/dev/null 2>&1 || true
   done < <(
     ufw status numbered 2>/dev/null | \
     grep "$COMMENT_PREFIX" | \
-
     awk -F'[][]' '{print $2}' | sort -rn
   )
 
@@ -3946,7 +3952,8 @@ export_nginx_conf_file() {
 worker_processes  auto;
 
 error_log  /dev/null;
-pid        /var/run/nginx.pid;
+# 使用独立 PID 文件，避免与系统 Nginx 服务冲突。
+pid        /var/run/sing-box-nginx.pid;
 
 events {
     worker_connections  1024;
@@ -4495,6 +4502,7 @@ EOF_REALM
             "type":"hysteria2",
             "tag":"${NODE_NAME[12]} ${NODE_TAG[1]}",
             "listen":"::",
+
             "listen_port":$PORT_HYSTERIA2,
             "users":[
                 {
@@ -4502,7 +4510,6 @@ EOF_REALM
                 }
             ],
             "ignore_client_bandwidth":false${HY2_REALM_CONFIG},
-
             "tls":{
                 "enabled":true,
                 "alpn":[
@@ -5396,6 +5403,7 @@ export_list() {
       local CLASH_SUF=""; [ "${#SERVER_IPS[@]}" -gt 1 ] && CLASH_SUF=" [${ip}]"
       local CLASH_HYSTERIA2="- {name: \"${NODE_NAME[12]} ${NODE_TAG[1]}${CLASH_SUF}\", type: hysteria2, server: ${ip}, port: ${PORT_HYSTERIA2},${CLASH_HOPPING} up: \"${HY2_UP} Mbps\", down: \"${HY2_DOWN} Mbps\", password: ${UUID[12]}, sni: ${TLS_SERVER}, skip-cert-verify: false, fingerprint: ${SELF_SIGNED_FINGERPRINT_SHA256}${CLASH_REALM_OPTS}}"
       local CLASH_SUBSCRIBE+="
+
   $CLASH_HYSTERIA2
 "
     done
@@ -5403,7 +5411,6 @@ export_list() {
 
   if [ -n "$PORT_TUIC" ]; then
     for ip in "${SERVER_IPS[@]}"; do
-
       local CLASH_SUF=""; [ "${#SERVER_IPS[@]}" -gt 1 ] && CLASH_SUF=" [${ip}]"
       local CLASH_TUIC="- {name: \"${NODE_NAME[13]} ${NODE_TAG[2]}${CLASH_SUF}\", type: tuic, server: ${ip}, port: ${PORT_TUIC}, uuid: ${UUID[13]}, password: ${TUIC_PASSWORD}, alpn: [h3], reduce-rtt: true, request-timeout: 8000, udp-relay-mode: native, congestion-controller: $TUIC_CONGESTION_CONTROL, sni: ${TLS_SERVER}, skip-cert-verify: false, fingerprint: ${SELF_SIGNED_FINGERPRINT_SHA256}}"
       local CLASH_SUBSCRIBE+="
@@ -6297,6 +6304,7 @@ $(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto")
 
 $(text 82) 2:
 $(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2")
+
 EOF
 
   # 生成配置文件
@@ -6304,7 +6312,6 @@ EOF
 ┌────────────────┐
 │                │
 │     $(warning "V2rayN")     │
-
 │                │
 └────────────────┘
 $(info "${V2RAYN_SUBSCRIBE}")
@@ -7198,6 +7205,7 @@ for z in ${!ALL_PARAMETER[@]}; do
       ;;
     -R )
       change_protocols; exit 0
+
       ;;
     --LANGUAGE )
       ((z++)); [[ "${ALL_PARAMETER[z]^^}" =~ ^C ]] && LANGUAGE=C || LANGUAGE=E
@@ -7205,7 +7213,6 @@ for z in ${!ALL_PARAMETER[@]}; do
     --CHOOSE_PROTOCOLS )
       ((z++)); CHOOSE_PROTOCOLS=${ALL_PARAMETER[z]}
       ;;
-
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
       ;;
@@ -7214,6 +7221,21 @@ for z in ${!ALL_PARAMETER[@]}; do
       ;;
     --PORT_MODE )
       ((z++)); PORT_MODE=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_XTLS_REALITY )
+      ((z++)); PORT_XTLS_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_HYSTERIA2 )
+      ((z++)); PORT_HYSTERIA2=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_ANYTLS )
+      ((z++)); PORT_ANYTLS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_TROJAN )
+      ((z++)); PORT_TROJAN=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_SHADOWSOCKS )
+      ((z++)); PORT_SHADOWSOCKS=${ALL_PARAMETER[z]}
       ;;
     --SUBSCRIBE_IP )
       ((z++)); SUBSCRIBE_IP=${ALL_PARAMETER[z]}
@@ -7307,4 +7329,3 @@ else
   menu_setting
   menu
 fi
-
