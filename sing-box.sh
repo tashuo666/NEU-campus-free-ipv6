@@ -898,6 +898,7 @@ change_config() {
     # Realm 与端口跳跃互斥：Realm 已开启时先确认，确认后才进入端口跳跃流程
     local HY2_LINE=''
     [ -s ${WORK_DIR}/subscribe/proxies ] && HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies)
+
     if grep -q 'realm-opts' <<< "$HY2_LINE"; then
       local HY2_CONFIRM
       reading "\n $(text 183) " HY2_CONFIRM
@@ -1798,6 +1799,7 @@ custom_route_delete() {
           . + [$new_rule]
         elif ($del | any(.rule_index == $idx and .type == "unknown")) then
           .
+
         else
           . + [$new_rule]
         end
@@ -2698,6 +2700,7 @@ check_system_ip() {
 
   [ -s $TEMP_DIR/ip4.json ] &&
   local IP4_JSON=$(cat $TEMP_DIR/ip4.json) &&
+
   WAN4=$(awk -F '"' '/"ip"/{print $4}' <<< "$IP4_JSON") &&
   COUNTRY4=$(awk -F '"' '/"country"/{print $4}' <<< "$IP4_JSON") &&
   EMOJI4=$(awk -F '"' '/"emoji"/{print $4}' <<< "$IP4_JSON") &&
@@ -3160,9 +3163,6 @@ sing-box_variables() {
     input_nginx_port
   fi
 
-  # 仅保留公网 IPv6 作为节点地址；订阅服务地址单独使用公网 IPv4。
-  DETECTED_IPS=($(printf '%s\n' "${DETECTED_IPS[@]}" | grep ':' | grep -vE '^([fF][cCdD]|fe80:|ff|::1)' || true)
-
   # 检测本机所有公网 IPv6 并确认，得到 SERVER_IPS 数组；SERVER_IP 取第一个作为主 IP
   if [ -n "$SERVER_IP" ]; then
     # 已通过 --SERVER_IP / -F 配置文件预设（支持逗号分隔多 IP）
@@ -3179,7 +3179,8 @@ sing-box_variables() {
       confirm_server_ips
     fi
   fi
-  SERVER_IPS=($(printf '%s\n' "${SERVER_IPS[@]}" | grep ':' | grep -vE '^([fF][cCdD]|fe80:|ff|::1)' || true)
+  # 仅保留公网 IPv6 作为节点地址；订阅服务地址单独使用公网 IPv4。
+  SERVER_IPS=($(printf '%s\n' "${SERVER_IPS[@]}" | grep ':' | grep -vE '^([fF][cCdD]|fe80:|ff|::1)' || true))
   [ "${#SERVER_IPS[@]}" -eq 0 ] && error "未检测到可用公网 IPv6，请检查 NAT 服务商的 IPv6 入站配置。"
   SERVER_IP=${SERVER_IPS[0]} && WS_SERVER_IP_SHOW=$SERVER_IP
 
@@ -3600,6 +3601,7 @@ purge_service_port_rules_ufw() {
   done < <(
     ufw status numbered 2>/dev/null | \
     grep "$COMMENT_PREFIX" | \
+
     awk -F'[][]' '{print $2}' | sort -rn
   )
 
@@ -4500,6 +4502,7 @@ EOF_REALM
                 }
             ],
             "ignore_client_bandwidth":false${HY2_REALM_CONFIG},
+
             "tls":{
                 "enabled":true,
                 "alpn":[
@@ -5308,6 +5311,10 @@ export_list() {
   if [[ ! "$SUBSCRIBE_IP" =~ ^([1-9]?[0-9]{1,2}\.){3}[0-9]{1,3}$ || "$SUBSCRIBE_IP" =~ ^10\. || "$SUBSCRIBE_IP" =~ ^192\.168\. || "$SUBSCRIBE_IP" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
     SUBSCRIBE_IP="$WAN4"
   fi
+  if [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && [[ ! "$SUBSCRIBE_IP" =~ ^([1-9]?[0-9]{1,2}\.){3}[0-9]{1,3}$ || "$SUBSCRIBE_IP" =~ ^10\. || "$SUBSCRIBE_IP" =~ ^192\.168\. || "$SUBSCRIBE_IP" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
+    error "非交互安装必须通过 --SUBSCRIBE_IP 指定公网 IPv4，不能使用内网地址。"
+    return 1
+  fi
   while [[ ! "$SUBSCRIBE_IP" =~ ^([1-9]?[0-9]{1,2}\.){3}[0-9]{1,3}$ || "$SUBSCRIBE_IP" =~ ^10\. || "$SUBSCRIBE_IP" =~ ^192\.168\. || "$SUBSCRIBE_IP" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; do
     reading "请输入用于订阅下载的公网 IPv4 地址: " SUBSCRIBE_IP
   done
@@ -5396,6 +5403,7 @@ export_list() {
 
   if [ -n "$PORT_TUIC" ]; then
     for ip in "${SERVER_IPS[@]}"; do
+
       local CLASH_SUF=""; [ "${#SERVER_IPS[@]}" -gt 1 ] && CLASH_SUF=" [${ip}]"
       local CLASH_TUIC="- {name: \"${NODE_NAME[13]} ${NODE_TAG[2]}${CLASH_SUF}\", type: tuic, server: ${ip}, port: ${PORT_TUIC}, uuid: ${UUID[13]}, password: ${TUIC_PASSWORD}, alpn: [h3], reduce-rtt: true, request-timeout: 8000, udp-relay-mode: native, congestion-controller: $TUIC_CONGESTION_CONTROL, sni: ${TLS_SERVER}, skip-cert-verify: false, fingerprint: ${SELF_SIGNED_FINGERPRINT_SHA256}}"
       local CLASH_SUBSCRIBE+="
@@ -6296,6 +6304,7 @@ EOF
 ┌────────────────┐
 │                │
 │     $(warning "V2rayN")     │
+
 │                │
 └────────────────┘
 $(info "${V2RAYN_SUBSCRIBE}")
@@ -7196,6 +7205,7 @@ for z in ${!ALL_PARAMETER[@]}; do
     --CHOOSE_PROTOCOLS )
       ((z++)); CHOOSE_PROTOCOLS=${ALL_PARAMETER[z]}
       ;;
+
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
       ;;
@@ -7297,5 +7307,4 @@ else
   menu_setting
   menu
 fi
-
 
