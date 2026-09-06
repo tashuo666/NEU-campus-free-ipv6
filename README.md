@@ -40,8 +40,24 @@ bash <(curl -fsSL https://raw.githubusercontent.com/tashuo666/NEU-campus-free-ip
 也可以使用参数：
 
 ```bash
-bash sing-box.sh --PORT_MODE random --SUBSCRIBE_IP 82.156.239.160
+bash sing-box.sh --PORT_MODE random --PORT_NGINX 19021 --SUBSCRIBE_IP 82.156.239.160
 ```
+
+自定义端口示例：
+
+```bash
+bash sing-box.sh \
+  --PORT_MODE custom \
+  --PORT_XTLS_REALITY 14029 \
+  --PORT_HYSTERIA2 8101 \
+  --PORT_ANYTLS 1164 \
+  --PORT_TROJAN 24585 \
+  --PORT_SHADOWSOCKS 56502 \
+  --PORT_NGINX 19021 \
+  --SUBSCRIBE_IP 82.156.239.160
+```
+
+端口参数会进行范围、重复和本机监听检查；不传入协议端口时，脚本会按交互选择自定义端口或随机端口。
 
 NAT 服务商必须为五个 IPv6 节点端口提供入站放行；订阅端口则必须通过公网 IPv4 映射并放行。
 
