@@ -40,7 +40,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/tashuo666/NEU-campus-free-ip
 也可以使用参数：
 
 ```bash
-bash sing-box.sh --PORT_MODE random --PORT_NGINX 19021 --SUBSCRIBE_IP 82.156.239.160
+bash sing-box.sh --PORT_MODE random --SUBSCRIBE true --PORT_NGINX 19021 --SUBSCRIBE_IP 82.156.239.160
 ```
 
 自定义端口示例：
@@ -53,6 +53,7 @@ bash sing-box.sh \
   --PORT_ANYTLS 1164 \
   --PORT_TROJAN 24585 \
   --PORT_SHADOWSOCKS 56502 \
+  --SUBSCRIBE true \
   --PORT_NGINX 19021 \
   --SUBSCRIBE_IP 82.156.239.160
 ```
