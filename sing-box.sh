@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.0.0-ipv6 (2026.09.06)'
+VERSION='v1.0.1-ipv6 (2026.09.07)'
 
 # Github 反代加速代理
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
@@ -898,7 +898,6 @@ change_config() {
     # Realm 与端口跳跃互斥：Realm 已开启时先确认，确认后才进入端口跳跃流程
     local HY2_LINE=''
     [ -s ${WORK_DIR}/subscribe/proxies ] && HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies)
-
     if grep -q 'realm-opts' <<< "$HY2_LINE"; then
       local HY2_CONFIRM
       reading "\n $(text 183) " HY2_CONFIRM
@@ -1799,7 +1798,6 @@ custom_route_delete() {
           . + [$new_rule]
         elif ($del | any(.rule_index == $idx and .type == "unknown")) then
           .
-
         else
           . + [$new_rule]
         end
@@ -2221,47 +2219,37 @@ check_install() {
     fi
   fi
 
-  # 并发下载订阅模板 (clash, clash2, sing-box-template)，在新安装和更换协议时会用到
-  {
-    wget --no-check-certificate --continue -qO $TEMP_DIR/clash ${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash 2>/dev/null &
-    wget --no-check-certificate --continue -qO $TEMP_DIR/clash2 ${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash2 2>/dev/null &
-    wget --no-check-certificate --continue -qO $TEMP_DIR/sing-box-template ${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box 2>/dev/null &
-    wait
-  } &
+  # 必需文件使用同步下载并设置总超时，避免后台任务失控导致安装流程假死。
+  download_required_file "$TEMP_DIR/clash" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash" "$SUBSCRIBE_TEMPLATE/clash" || warning "\n $(text 49): clash template "
+  download_required_file "$TEMP_DIR/clash2" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash2" "$SUBSCRIBE_TEMPLATE/clash2" || warning "\n $(text 49): clash2 template "
+  download_required_file "$TEMP_DIR/sing-box-template" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box" "$SUBSCRIBE_TEMPLATE/sing-box" || warning "\n $(text 49): sing-box template "
 
-  # 如果有需要，后台静默下载 sing-box
+  # 如果有需要，下载 sing-box 及安装所需工具。所有下载完成后才继续安装。
   if [ "${STATUS[0]}" = "$(text 26)" ] && [ ! -s ${WORK_DIR}/sing-box ]; then
-    # 任务 1: 下载 sing-box
-    {
-      local ONLINE=$(get_sing_box_version)
-      local SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-      local SB_BIN="$SB_DIR/sing-box"
-      local SB_ARCHIVE="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz"
-      if download_sing_box_archive "$ONLINE" "$SB_ARCHIVE"; then
-        tar xzf "$SB_ARCHIVE" -C "$TEMP_DIR" 2>/dev/null
-      fi
-      rm -f "$SB_ARCHIVE"
-      [ -s "$SB_BIN" ] && [ -x "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
-    } &
+    local ONLINE=$(get_sing_box_version)
+    local SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
+    local SB_BIN="$SB_DIR/sing-box"
+    local SB_ARCHIVE="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz"
+    if download_sing_box_archive "$ONLINE" "$SB_ARCHIVE"; then
+      tar xzf "$SB_ARCHIVE" -C "$TEMP_DIR" 2>/dev/null
+    fi
+    rm -f "$SB_ARCHIVE"
+    [ -s "$SB_BIN" ] && [ -x "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
 
-    # 任务 2: 下载 jq
-    {
-      wget --no-check-certificate --continue -qO $TEMP_DIR/jq \
-        ${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH 2>/dev/null \
-        && chmod +x $TEMP_DIR/jq
-    } &
+    download_required_file "$TEMP_DIR/jq" \
+      "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" \
+      "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" \
+      && chmod +x "$TEMP_DIR/jq"
 
-    # 任务 3: 下载 qrencode
-    {
-      wget --no-check-certificate --continue -qO $TEMP_DIR/qrencode \
-        ${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH 2>/dev/null \
-        && chmod +x $TEMP_DIR/qrencode
-    } &
+    download_required_file "$TEMP_DIR/qrencode" \
+      "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" \
+      "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" \
+      && chmod +x "$TEMP_DIR/qrencode"
 
-    # 任务 4: 注册 warp 账号
-    {
-      wget -qO- --tries=10 --waitretry=1 --timeout=2 "https://warp.cloudflare.nyc.mn/?run=register" > $TEMP_DIR/warp_account.json 2>/dev/null
-    } &
+    # WARP 只在实际需要时注册，且不允许该网络请求阻塞安装。
+    if [ "$IS_HY2_WARP" = 'is_hy2_warp' ] || [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+      wget -qO- --tries=1 --timeout=8 "https://warp.cloudflare.nyc.mn/?run=register" > "$TEMP_DIR/warp_account.json" 2>/dev/null || true
+    fi
   elif [ "${STATUS[0]}" != "$(text 26)" ]; then
     # 查 sing-box 进程号，运行时长和内存占用，占用的端口
     SING_BOX_VERSION="Version: $(${WORK_DIR}/sing-box version | awk '/version/{print $NF}')"
@@ -2492,10 +2480,31 @@ get_sing_box_version() {
   echo "$RESULT_VERSION"
 }
 
-# 下载并校验 Sing-box 压缩包；任一地址失败后自动切换到下一个地址。
+# 下载单个必需文件。每个地址只尝试一次，并限制单次请求时间；失败后最多切换到一个备用地址。
+download_required_file() {
+  local output=$1 primary_url=$2 fallback_url=$3 url
+  rm -f "$output"
+  for url in "$primary_url" "$fallback_url"; do
+    [ -n "$url" ] || continue
+    info "\n $(text 48): $url "
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 45s wget --no-check-certificate --timeout=12 --tries=1 --waitretry=0 -qO "$output" "$url" 2>/dev/null
+    else
+      wget --no-check-certificate --timeout=12 --tries=1 --waitretry=0 -qO "$output" "$url" 2>/dev/null
+    fi
+    if [ -s "$output" ]; then
+      return 0
+    fi
+    warning "\n $(text 49): $url "
+    rm -f "$output"
+  done
+  return 1
+}
+
+# 下载并校验 Sing-box 压缩包；只使用一个已探测的代理和官方地址作为备用。
 # 可通过环境变量覆盖完整地址，支持 {version} 和 {arch} 占位符。
 download_sing_box_archive() {
-  local version=$1 archive=$2 url proxy custom_url
+  local version=$1 archive=$2 url custom_url
   local asset="sing-box-${version}-linux-${SING_BOX_ARCH}.tar.gz"
   local urls=()
 
@@ -2507,16 +2516,13 @@ download_sing_box_archive() {
   fi
 
   [ -n "${GH_PROXY:-}" ] && urls+=("${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v${version}/${asset}")
-  for proxy in "${GITHUB_PROXY[@]}"; do
-    [ "$proxy" = "${GH_PROXY:-}" ] && continue
-    urls+=("${proxy}https://github.com/SagerNet/sing-box/releases/download/v${version}/${asset}")
-  done
   urls+=("https://github.com/SagerNet/sing-box/releases/download/v${version}/${asset}")
 
   for url in "${urls[@]}"; do
     rm -f "$archive"
     info "\n $(text 48): $url "
-    if wget --no-check-certificate --timeout=20 --tries=2 --waitretry=3 -qO "$archive" "$url" \
+    if (command -v timeout >/dev/null 2>&1 && timeout 45s wget --no-check-certificate --timeout=12 --tries=1 --waitretry=0 -qO "$archive" "$url" 2>/dev/null) || \
+       ( ! command -v timeout >/dev/null 2>&1 && wget --no-check-certificate --timeout=12 --tries=1 --waitretry=0 -qO "$archive" "$url" 2>/dev/null) \
       && [ -s "$archive" ] && tar tzf "$archive" >/dev/null 2>&1; then
       return 0
     fi
@@ -2700,7 +2706,6 @@ check_system_ip() {
 
   [ -s $TEMP_DIR/ip4.json ] &&
   local IP4_JSON=$(cat $TEMP_DIR/ip4.json) &&
-
   WAN4=$(awk -F '"' '/"ip"/{print $4}' <<< "$IP4_JSON") &&
   COUNTRY4=$(awk -F '"' '/"country"/{print $4}' <<< "$IP4_JSON") &&
   EMOJI4=$(awk -F '"' '/"emoji"/{print $4}' <<< "$IP4_JSON") &&
@@ -3602,7 +3607,6 @@ purge_service_port_rules_ufw() {
   local RULE_NUM
   local COMMENT_PREFIX='Sing-box Family Bucket UFW PORT'
 
-
   while read -r RULE_NUM; do
     [ -n "$RULE_NUM" ] && ufw --force delete "$RULE_NUM" >/dev/null 2>&1 || true
   done < <(
@@ -4502,7 +4506,6 @@ EOF_REALM
             "type":"hysteria2",
             "tag":"${NODE_NAME[12]} ${NODE_TAG[1]}",
             "listen":"::",
-
             "listen_port":$PORT_HYSTERIA2,
             "users":[
                 {
@@ -5255,8 +5258,8 @@ install_sing-box() {
   cp $TEMP_DIR/sing-box $TEMP_DIR/jq ${WORK_DIR}
   [ -x $TEMP_DIR/qrencode ] && cp $TEMP_DIR/qrencode ${WORK_DIR}
 
-  # 生成 Argo systemd 配置文件，并复制 cloudflared 可执行二进制文件
-  cp $TEMP_DIR/cloudflared ${WORK_DIR}
+  # 仅在实际配置 Argo 时复制 cloudflared；IPv6-only 安装不应因可选文件缺失而失败。
+  [ -s "$TEMP_DIR/cloudflared" ] && cp "$TEMP_DIR/cloudflared" "${WORK_DIR}"
   [ -n "$ARGO_RUNS" ] && argo_systemd
 
   # 如果是 Json Argo，把配置文件复制到工作目录
@@ -5403,7 +5406,6 @@ export_list() {
       local CLASH_SUF=""; [ "${#SERVER_IPS[@]}" -gt 1 ] && CLASH_SUF=" [${ip}]"
       local CLASH_HYSTERIA2="- {name: \"${NODE_NAME[12]} ${NODE_TAG[1]}${CLASH_SUF}\", type: hysteria2, server: ${ip}, port: ${PORT_HYSTERIA2},${CLASH_HOPPING} up: \"${HY2_UP} Mbps\", down: \"${HY2_DOWN} Mbps\", password: ${UUID[12]}, sni: ${TLS_SERVER}, skip-cert-verify: false, fingerprint: ${SELF_SIGNED_FINGERPRINT_SHA256}${CLASH_REALM_OPTS}}"
       local CLASH_SUBSCRIBE+="
-
   $CLASH_HYSTERIA2
 "
     done
@@ -6304,7 +6306,6 @@ $(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto")
 
 $(text 82) 2:
 $(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2")
-
 EOF
 
   # 生成配置文件
@@ -7205,7 +7206,6 @@ for z in ${!ALL_PARAMETER[@]}; do
       ;;
     -R )
       change_protocols; exit 0
-
       ;;
     --LANGUAGE )
       ((z++)); [[ "${ALL_PARAMETER[z]^^}" =~ ^C ]] && LANGUAGE=C || LANGUAGE=E
@@ -7329,3 +7329,4 @@ else
   menu_setting
   menu
 fi
+
